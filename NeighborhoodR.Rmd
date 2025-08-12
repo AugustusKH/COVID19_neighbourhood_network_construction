@@ -1,0 +1,495 @@
+---
+title: "COVID19 PPI neighborhood"
+author: "Pakorn Sagulkoo 6380064520"
+date: "21/3/2565"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Practice
+
+1. Library calling
+
+```{r message = FALSE, warning = FALSE}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+#library(biomartr)
+#library(org.Hs.eg.db)
+#library(biomaRt)
+#library(clusterProfiler)
+#library(enrichplot)
+library(ggVennDiagram)
+library(tibble)
+library(sjmisc)
+library(corrplot)
+library(ggcorrplot)
+``` 
+
+2. Import the data
+
+```{r}
+#GEO_set1
+geo_set1 <- read_excel("D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/Transcriptomes.xlsx", sheet = 1)
+geo_set1
+```
+
+```{r}
+#GEO_set2
+geo_set2 <- read_excel("D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/Transcriptomes.xlsx", sheet = 2)
+geo_set2
+```
+
+```{r}
+geo_set1 %>%
+  filter(GeneSymbol == "TMEM183A")
+```
+
+3. Filter DEGs df
+
+```{r}
+#Up_DEGs_df_set1
+Up_DEGs_df_set1 <- geo_set1 %>%
+  filter(log2FC > 1 & `Adjusted p-value` < 0.05) %>%
+  dplyr::select(Genes = GeneSymbol, log2FC, FDR = `Adjusted p-value`)
+
+Up_DEGs_df_set1
+```
+
+```{r}
+#Down_DEGs_df_set1
+Down_DEGs_df_set1 <- geo_set1 %>%
+  filter(log2FC < -1 & `Adjusted p-value` < 0.05) %>%
+  dplyr::select(Genes = GeneSymbol, log2FC, FDR = `Adjusted p-value`)
+
+Down_DEGs_df_set1
+```
+
+```{r}
+#Up_DEGs_df_set2
+Up_DEGs_df_set2 <- geo_set2 %>%
+  filter(`Fold change (Pos vs. Neg)` > 1 & `FDR step up (Pos vs. Neg)` < 0.05) %>%
+  dplyr::select(Genes = `Gene symbol`, log2FC = `Fold change (Pos vs. Neg)`, FDR = `FDR step up (Pos vs. Neg)`)
+
+Up_DEGs_df_set2
+```
+
+```{r}
+#Down_DEGs_df_set2
+Down_DEGs_df_set2 <- geo_set2 %>%
+  filter(`Fold change (Pos vs. Neg)` < -1 & `FDR step up (Pos vs. Neg)` < 0.05) %>%
+  dplyr::select(Genes = `Gene symbol`, log2FC = `Fold change (Pos vs. Neg)`, FDR = `FDR step up (Pos vs. Neg)`)
+
+Down_DEGs_df_set2
+```
+
+```{r}
+#Creat up DEG gene list 
+UpDEG1 <- Up_DEGs_df_set1$Genes
+UpDEG2 <- Up_DEGs_df_set2$Genes
+UpMerge <- intersect(UpDEG1, UpDEG2)
+UpMerge
+```
+
+```{r}
+#Creat down DEG gene list 
+DownDEG1 <- Down_DEGs_df_set1$Genes
+DownDEG2 <- Down_DEGs_df_set2$Genes
+DownMerge <- intersect(DownDEG1, DownDEG2)
+DownMerge
+```
+
+```{r}
+DEG_set1 <- union(Up_DEGs_df_set1$Genes, Down_DEGs_df_set1$Genes)
+DEG_set2 <- union(Up_DEGs_df_set2$Genes, Down_DEGs_df_set2$Genes)
+```
+
+```{r}
+#length(DEG_set1)
+#length(DEG_set2)
+intersect(Up_DEGs_df_set1$Genes, Down_DEGs_df_set1$Genes)
+```
+
+```{r}
+intersect(Up_DEGs_df_set2$Genes, Down_DEGs_df_set2$Genes)
+```
+
+```{r}
+common_DEGs <- intersect(DEG_set1, DEG_set2)
+length(common_DEGs)
+```
+
+```{r}
+DEGs_diff1 <- setdiff(common_DEGs, UpMerge)
+#length(DEGs_diff1)
+DEGs_diff2 <- setdiff(DEGs_diff1, DownMerge)
+length(DEGs_diff2)
+DEGs_diff2
+```
+
+```{r}
+#Venn diagram
+plot_venn <- function (x, show_intersect, set_color, set_size, label, label_geom, 
+    label_alpha, label_color, label_size, label_percent_digit, 
+    label_txtWidth, edge_lty, edge_size, ...)  {
+    venn <- Venn(x)
+    data <- process_data(venn)
+    p <- ggplot() + geom_sf(aes_string(fill = "count"), data = data@region) + 
+        geom_sf(aes_string(color = "name"), data = data@setEdge, 
+            show.legend = F, lty = edge_lty, size = edge_size, color = set_color) + 
+        geom_sf_text(aes_string(label = "name"), data = data@setLabel, 
+            size = set_size, color = set_color) + theme_void()
+    if (label != "none" & show_intersect == FALSE) {
+        region_label <- data@region %>% dplyr::filter(.data$component == 
+            "region") %>% dplyr::mutate(percent = paste(round(.data$count * 
+            100/sum(.data$count), digits = label_percent_digit), 
+            "%", sep = "")) %>% dplyr::mutate(both = paste(.data$count, 
+            paste0("(", .data$percent, ")"), sep = "\n"))
+        if (label_geom == "label") {
+            p <- p + geom_sf_label(aes_string(label = label), 
+                data = region_label, alpha = label_alpha, color = label_color, 
+                size = label_size, lineheight = 0.85, label.size = NA)
+        }
+        if (label_geom == "text") {
+            p <- p + geom_sf_text(aes_string(label = label), 
+                data = region_label, alpha = label_alpha, color = label_color, 
+                size = label_size, lineheight = 0.85)
+        }
+    }
+    if (show_intersect == TRUE) {
+        items <- data@region %>% dplyr::rowwise() %>% dplyr::mutate(text = stringr::str_wrap(paste0(.data$item, 
+            collapse = " "), width = label_txtWidth)) %>% sf::st_as_sf()
+        label_coord = sf::st_centroid(items$geometry) %>% sf::st_coordinates()
+        p <- ggplot(items) + geom_sf(aes_string(fill = "count")) + 
+            geom_sf_text(aes_string(label = "name"), data = data@setLabel, 
+                inherit.aes = F) + geom_text(aes_string(label = "count", 
+            text = "text"), x = label_coord[, 1], y = label_coord[, 
+            2], show.legend = FALSE) + theme_void()
+        ax <- list(showline = FALSE)
+        p <- plotly::ggplotly(p, tooltip = c("text")) %>% plotly::layout(xaxis = ax, 
+            yaxis = ax)
+    }
+    p
+}
+
+assignInNamespace(x="plot_venn", value=plot_venn, ns="ggVennDiagram")
+
+# List of items
+list_members <- list("GSE164805" = DEG_set1, "GSE154998" = DEG_set2)
+
+# Labels transparency
+geo_venn_plot <- ggVennDiagram(
+  list_members, 
+  color = "grey", 
+  set_size = 7,
+  label_size = 7,
+  lwd = 0.8, lty = 1, label_alpha = 0) +
+  #scale_x_continuous(expand = expansion(mult = .3)) +
+  #scale_y_continuous(expand = expansion(mult = .05)) +
+  scale_fill_gradient(low = "#effaeb", high = "#4dac26") +
+  #guides(fill=guide_legend(title="Protein count")) +
+  theme(legend.key.size = unit(1, 'cm'),
+        legend.text=element_text(size=15),
+        legend.title = element_text(size=17)
+        )
+
+geo_venn_plot
+```
+
+```{r}
+ggsave(plot = geo_venn_plot, file = "D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/geo_venn_plot.png", width=8, height=8, dpi = 1000)
+```
+
+```{r}
+#Save as data frame
+UpMerge_df <- as.data.frame(UpMerge) %>% dplyr::select(Genes = UpMerge)
+UpMerge_df
+```
+
+```{r}
+#Save as data frame
+DownMerge_df <- as.data.frame(DownMerge) %>% dplyr::select(Genes = DownMerge)
+DownMerge_df
+```
+
+```{r}
+write.table(UpMerge_df, file = "D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/sig_overexp_genes.txt", sep = "\t", quote = F, row.names = F, col.names = F)
+write.table(DownMerge_df, file = "D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/sig_underexp_genes.txt", sep = "\t", quote = F, row.names = F, col.names = F)
+```
+
+```{r}
+DEGs_all <- intersect(DEG_set1, DEG_set2)
+DEGs_all_df <- as.data.frame(DEGs_all) %>% dplyr::select(Genes = DEGs_all)
+
+DEGs_all_df 
+```
+
+```{r}
+write.table(DEGs_all_df, file = "D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/DEGs_all.txt", sep = "\t", quote = F, row.names = F, col.names = F)
+```
+
+3. Import PPI data
+
+```{r}
+PPI_dat <- read.csv("D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/PPI_data.csv", header = TRUE)
+PPI_dat
+```
+
+```{r}
+#Select columns
+PPI_dat_select_parameter <- PPI_dat %>%
+  dplyr::select(
+    ensembl_id = name,
+    gene_symbol = display.name,
+    AverageShortestPathLength,
+    BetweennessCentrality,
+    ClosenessCentrality,
+    ClusteringCoefficient,
+    Degree,
+    Eccentricity,
+    NeighborhoodConnectivity,
+    Radiality,
+    TopologicalCoefficient
+  )
+
+PPI_dat_select_parameter
+```
+
+```{r}
+save_df <- PPI_dat_select_parameter %>%
+  dplyr::select(ensembl_id, gene_symbol, AverageShortestPathLength, 
+                ClusteringCoefficient, Degree, Betweenness = BetweennessCentrality,
+                Closeness = ClosenessCentrality,
+                Eccentricity, NeighborhoodConnectivity, Radiality, 
+                TopologicalCoefficient) %>%
+  mutate(ensembl_id = substr(ensembl_id, 6, nchar(ensembl_id)))
+
+save_df
+```
+
+```{r}
+write.csv(save_df, file = "D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/PPI_topological.csv", sep = "\t", quote = F, row.names = F, col.names = TRUE)
+```
+
+4. Find high degree and betweenness
+  4.1 Degree
+  
+```{r}
+#Select genes having degree >= 95 percentile
+quan_degree <- quantile(save_df$Degree, prob = seq(0, 1, 0.05))
+
+arrange_degree <- save_df %>%
+  arrange(desc(Degree)) %>%
+  filter(Degree >= quan_degree["95%"]) %>%
+  dplyr::select(ensembl_id, gene_symbol, Degree, Betweenness, Closeness, ClusteringCoefficient)
+  
+arrange_degree
+```
+  
+  4.2 Betweenness
+  
+```{r}
+#Select genes having betweenness centrality >= 95 percentile
+quan_betweenness <- quantile(save_df$Betweenness, prob = seq(0, 1, 0.05))
+
+arrange_betweenness <- save_df %>%
+  arrange(desc(Betweenness)) %>%
+  filter(Betweenness >= quan_betweenness["95%"]) %>%
+  dplyr::select(ensembl_id, gene_symbol, Degree, Betweenness, Closeness, ClusteringCoefficient)
+  
+arrange_betweenness
+```
+
+```{r}
+options(repr.plot.width=15, repr.plot.height=8)
+
+#Venn diagram
+plot_venn <- function (x, show_intersect, set_color, set_size, label, label_geom, 
+    label_alpha, label_color, label_size, label_percent_digit, 
+    label_txtWidth, edge_lty, edge_size, ...)  {
+    venn <- Venn(x)
+    data <- process_data(venn)
+    p <- ggplot() + geom_sf(aes_string(fill = "count"), data = data@region) + 
+        geom_sf(aes_string(color = "name"), data = data@setEdge, 
+            show.legend = F, lty = edge_lty, size = edge_size, color = set_color) + 
+        geom_sf_text(aes_string(label = "name"), data = data@setLabel, 
+            size = set_size, color = set_color) + theme_void()
+    if (label != "none" & show_intersect == FALSE) {
+        region_label <- data@region %>% dplyr::filter(.data$component == 
+            "region") %>% dplyr::mutate(percent = paste(round(.data$count * 
+            100/sum(.data$count), digits = label_percent_digit), 
+            "%", sep = "")) %>% dplyr::mutate(both = paste(.data$count, 
+            paste0("(", .data$percent, ")"), sep = "\n"))
+        if (label_geom == "label") {
+            p <- p + geom_sf_label(aes_string(label = label), 
+                data = region_label, alpha = label_alpha, color = label_color, 
+                size = label_size, lineheight = 0.85, label.size = NA)
+        }
+        if (label_geom == "text") {
+            p <- p + geom_sf_text(aes_string(label = label), 
+                data = region_label, alpha = label_alpha, color = label_color, 
+                size = label_size, lineheight = 0.85)
+        }
+    }
+    if (show_intersect == TRUE) {
+        items <- data@region %>% dplyr::rowwise() %>% dplyr::mutate(text = stringr::str_wrap(paste0(.data$item, 
+            collapse = " "), width = label_txtWidth)) %>% sf::st_as_sf()
+        label_coord = sf::st_centroid(items$geometry) %>% sf::st_coordinates()
+        p <- ggplot(items) + geom_sf(aes_string(fill = "count")) + 
+            geom_sf_text(aes_string(label = "name"), data = data@setLabel, 
+                inherit.aes = F) + geom_text(aes_string(label = "count", 
+            text = "text"), x = label_coord[, 1], y = label_coord[, 
+            2], show.legend = FALSE) + theme_void()
+        ax <- list(showline = FALSE)
+        p <- plotly::ggplotly(p, tooltip = c("text")) %>% plotly::layout(xaxis = ax, 
+            yaxis = ax)
+    }
+    p
+}
+
+assignInNamespace(x="plot_venn", value=plot_venn, ns="ggVennDiagram")
+
+# List of items
+list_members <- list("Degree centrality" = arrange_degree$gene_symbol, "Betweenness centrality" = arrange_betweenness$gene_symbol)
+
+# Labels transparency
+centrality_venn_plot <- ggVennDiagram(
+  list_members, 
+  color = "grey", 
+  set_size = 5.5,
+  label_size = 4.5,
+  lwd = 0.8, lty = 1, label_alpha = 0) +
+  #scale_x_continuous(expand = expansion(mult = .3)) +
+  #scale_y_continuous(expand = expansion(mult = .05)) +
+  scale_fill_gradient(low = "#F4FAFE", high = "#4981BF") +
+  #guides(fill=guide_legend(title="Protein count")) +
+  theme(legend.key.size = unit(1, 'cm'),
+        legend.text=element_text(size=12),
+        legend.title = element_text(size=15)
+        )
+
+centrality_venn_plot
+```
+
+```{r}
+ggsave(plot = centrality_venn_plot, file = "D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/centrality_venn_plot.png", width=8, height=8, dpi = 1000)
+```
+
+5. Plot graphs
+  5.1 Degree distribution
+  
+```{r}
+data_graph1 <- save_df %>%
+  count(Degree) %>%
+  mutate(prob = n/sum(n))
+
+degree_distribute <- ggplot(data_graph1, aes(x = Degree, y = prob)) +
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_smooth(method = "lm", se = FALSE) +
+  #labs(title = "Degree distribution", x = "log(k)", y = "log(p(k))")
+  labs(x = "log(k)", y = "log(p(k))") +
+  stat_cor(aes(label=..rr.label..), label.x=1.1, label.y=log(0.6), size = 7) 
+  
+
+degree_distribute
+```
+  
+  5.2 c(k) vs k graph
+  
+```{r}
+cluster_plot <- ggplot(save_df, aes(x = Degree, y = ClusteringCoefficient)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  #labs(title = "Clustering coefficient vs degree plot", x = "k", y = "c(k)")
+  labs(x = "k", y = "c(k)") +
+  stat_cor(aes(label=..rr.label..), label.x=20, label.y=0.95, size = 7) +
+  theme(
+    text = element_text(size = 20),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    axis.title.y = element_text(margin = margin(r = 10))
+        )
+
+cluster_plot
+```
+  
+```{r}
+ggsave(plot = degree_distribute, file = "D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/degree_distribute.png", dpi = 1000)
+ggsave(plot = cluster_plot, file = "D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/cc_plot.png", dpi = 1000)
+```
+
+6. Correlation heatmap
+
+```{r}
+Dataset1 <- geo_set1 %>%
+  filter(GeneSymbol %in% common_DEGs) %>%
+  group_by(GeneSymbol) %>%
+  mutate(FC = mean(`Fold Change`), logFC = mean(log2FC), FDR = mean(`Adjusted p-value`)) %>%
+  distinct(GeneSymbol, .keep_all = TRUE) %>%
+  select(Gene = GeneSymbol, FC, logFC, FDR) %>%
+  arrange_at("Gene") %>%
+  remove_rownames %>%                   #tibble
+  column_to_rownames(var="Gene") %>%    #tibble
+  rotate_df()                           #sjmisc
+
+Dataset1
+```
+
+```{r}
+Dataset2 <- geo_set2 %>%
+  filter(`Gene symbol` %in% common_DEGs) %>%
+  select(Gene = `Gene symbol`, FC = `Ratio (Pos vs. Neg)`, logFC = `Fold change (Pos vs. Neg)`, FDR = `FDR step up (Pos vs. Neg)`) %>%
+  arrange_at("Gene") %>% 
+  remove_rownames %>%                  #tibble
+  column_to_rownames(var="Gene") %>%   #tibble
+  rotate_df()                          #sjmisc
+  
+Dataset2
+```
+
+```{r}
+cor_mat <- cor(Dataset1, Dataset2)
+```
+
+```{r}
+corrplot(cor_mat, method = 'color', tl.col = "black", order = "hclust", hclust.method = "average", addrect = 4, tl.cex = 0.7)
+```
+
+```{r}
+data_heatmap <- ggcorrplot(cor_mat, hc.order = TRUE, 
+                           legend.title = "Pearson Correlation", 
+                           hc.method = "average", 
+                           ggtheme = ggplot2::theme_gray, 
+                           colors = c("#4575b4", "white", "#d73027")) +
+  theme_minimal() +
+  ggplot2::scale_x_discrete(name = "GSE164805 (Microarray)", guide = guide_axis(check.overlap = TRUE)) +
+  ggplot2::scale_y_discrete(name = "GSE154998 (RNA-Seq)", guide = guide_axis(check.overlap = TRUE)) +
+  ggplot2::theme(
+    axis.text.x = element_text(size = 1, angle = 90, vjust = 1, hjust = 1),
+    axis.text.y = element_text(size = 1),
+    axis.title.x = element_text(margin = margin(t = 3), size = 20),
+    axis.title.y = element_text(margin = margin(r = 3), size = 20),
+    legend.key.size = unit(0.9, "cm"),
+    legend.title = element_text(size = 15),
+    legend.text = element_text(size = 15),
+    legend.position = "top"
+    ) 
+  
+data_heatmap
+```
+
+```{r}
+ggsave(plot = data_heatmap, file = "D:/Bioinfor MSc/Thesis/COVID network/R_code/Results/Neighborhood method2/heatmap.png", dpi = 1500)
+```
+
+
+
+
+
+
+
